@@ -9,7 +9,7 @@ class WB_Dimmer():
     def __init__(self, d_type, address, client) -> None:
         if d_type in self.dimmer_types:
             self.client = client.protocol
-            self.address = address
+            self.address = int(address)
             self.log = logging.getLogger()
             if d_type == 'WB_MRGBW_D':
                 self.chanels =[None,None,None,None]
@@ -19,10 +19,12 @@ class WB_Dimmer():
                 self.type = d_type
         else:
             raise ValueError('Unsupported dimmer type.')
-        asyncio.create_task(self.sync_registers())
 
     def __str__(self) -> str:
         return self.type
+    
+    def run_sync(self):
+        asyncio.create_task(self.sync_registers())
 
     async def get_lock(self):
         while self.lock:

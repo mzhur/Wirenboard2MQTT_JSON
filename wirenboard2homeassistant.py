@@ -1,119 +1,25 @@
-import asyncio, logging, signal #, uvloop
+import asyncio, logging, signal, json, uvloop
 from pymodbus.client.asynchronous.serial import (AsyncModbusSerialClient as ModbusClient)
 from pymodbus.client.asynchronous import schedulers
 from asyncudp import open_local_endpoint
 from dimmers import WB_Dimmer
+from HA_lights import WB_Light
 from gmqtt import Client as MQTTClient
 from datetime import datetime
 
-#asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 STOP = asyncio.Event()
 WB_DIMMERS = {}
 WB_LIGHTS = {}
-CONFIG = {'mqtt_host': '192.168.55.1',
-          'serial_port': '/dev/ttyS0',
-          'devices': {
-               100 : 'WB_MRGBW_D',
-               103 : 'WB_MRGBW_D',
-               108 : 'WB_MRGBW_D',
-               60  : 'WB-MDM3'
-                     },
-          'lights': {
-              'test_stolovaya' : {
-                  'address': 60,
-                  'chanels': [0]
-                },
-                'test_vanyna_komnata' : {
-                  'address': 60,
-                  'chanels': [1]
-                },
-                'test_spalnia' : {
-                  'address': 60,
-                  'chanels': [2]
-                },
-                'test_prohojia' : {
-                  'address': 108,
-                  'chanels': [0]
-                },
-                'test_kladovaia' : {
-                  'address': 108,
-                  'chanels': [3]
-                },
-                'test_zona_tv' : {
-                  'address': 100,
-                  'chanels': [0,3]
-                },
-                'test_wc' : {
-                  'address': 100,
-                  'chanels': [1,2]
-                },
-                'test_stoleshnitsa' : {
-                  'address': 103,
-                  'chanels': [3]
-                },
-                'test_kholl' : {
-                  'address': 108,
-                  'chanels': [1]
-                }
 
-                     } 
-          }
+#read settings from configuration file (json)
+with open('settings.conf') as f:
+        CONFIG = json.load(f)
 
 
-class WB_Light():
-    def __init__(self, dimmer, chanels, name) -> None:
-        if not isinstance(dimmer, WB_Dimmer):
-            raise ValueError('The dimmer is not wirebboard dimmer object.')
-        if isinstance(chanels, int):
-            self.chanels = [chanels]
-        elif isinstance(chanels, list):
-            self.chanels = chanels
-        else:
-            raise ValueError('The chanels data must be int or list')
-        self.dimmer = dimmer
-        self.topic = f'englishmile/light/{name}'
-        self.state = False
-        if self.dimmer.type == 'WB_MRGBW_D':
-            self.brightness = 255
-        else:
-            self.brightness = 100
-        try:
-            for ch in self.chanels:
-                tmp = dimmer.chanels[ch]
-                if (tmp is None):
-                    raise ValueError('Dimmer dont initializing data. please wait several seconds')   
-                elif int(tmp) > 0:
-                    self.state = True
-                    self.brightness = tmp
-        except Exception as e:
-                raise ValueError('Unaxepteble chanel for dimmer instance.')
-        self.name = name
-    def on(self, brightness=None):
-        self.state = True
-        if brightness is None:
-            brightness = self.brightness
-        asyncio.create_task(self.dimmer.push_data(brightness, self.chanels))
-            
-    def off(self):
-        self.state = False
-        asyncio.create_task(self.dimmer.push_data(0, self.chanels))
-
-    def set_brightness(self, brightness):
-        self.brightness = brightness
-        if self.state:
-            asyncio.create_task(self.dimmer.push_data(brightness, self.chanels))
-    
-    def to_json(self, type='state'):
-        if type == 'init':
-            return '{' + f'"~": "englishmile/light/{self.name}", "name": "{self.name}", "unique_id": "{self.name}_{self.dimmer.address}_{str(self.chanels)}", "cmd_t": "~/set", "stat_t": "~/state", "schema": "json", "brightness": true, ' + '"availability_topic": "etrv/state", "payload_available": "online", "payload_not_available": "offline"}' 
-        else:
-            if self.state:
-                return '{"brightness": %s, "state": "ON",}' % str(self.brightness)
-            else:
-                return '{"brightness": %s, "state": "OFF",}' % str(self.brightness)
 
 #Определяем основные функции для MQTT клиента
 def on_connect(client, flags, rc, properties):
@@ -138,11 +44,13 @@ def ask_exit(*args):
 
 
 async def init_loop(loop, client):
-      
+    
     # Создаем сущности физических димеров согласно конфигурационному файлу
     for addr in CONFIG['devices']:
-        WB_DIMMERS[addr] = WB_Dimmer(CONFIG['devices'][addr], addr, client) # раскомментировать client для работы с modbus
+        WB_DIMMERS[int(addr)] = WB_Dimmer(CONFIG['devices'][addr], addr, client) # раскомментировать client для работы с modbus
+        WB_DIMMERS[int(addr)].run_sync()
         log.info(f"Создали объект диммера адрес: {addr}, тип: {CONFIG['devices'][addr]}")
+
     # Создаем логические светильники с нужным количеством каналов диммера
     log.info(f"Диммеры: {WB_DIMMERS}")
     for name in CONFIG['lights']:
@@ -153,7 +61,7 @@ async def init_loop(loop, client):
         unsuccess = True
         while unsuccess:
             try:
-                WB_LIGHTS[name] = WB_Light(WB_DIMMERS[CONFIG['lights'][name]['address']], CONFIG['lights'][name]['chanels'], name)
+                WB_LIGHTS[name] = WB_Light(WB_DIMMERS[CONFIG['lights'][name]['address']], CONFIG['lights'][name]['chanels'], name, 'englishmile/light/')
                 unsuccess = False
             except Exception as e:
                 log.info(e)
@@ -168,11 +76,11 @@ async def init_loop(loop, client):
     log.info(f'Подключаемся: {CONFIG["mqtt_host"]}')
     await mqtt.connect(str(CONFIG["mqtt_host"]))
     for name in WB_LIGHTS:
-        mqtt.subscribe(f'{WB_LIGHTS[name].topic}', qos=0)
+        mqtt.subscribe(f'{WB_LIGHTS[name].topic}', qos=2)
         mqtt.subscribe(f'{WB_LIGHTS[name].topic}/set', qos=2)
-        mqtt.publish(f'homeassistant/light/{name}/config', WB_LIGHTS[name].to_json('init'), qos=2, retain=True)
+        mqtt.publish(f'homeassistant/light/{name}/config', WB_LIGHTS[name].to_json('init'), retain=True)
         log.info(f'Опубликовали: {WB_LIGHTS[name].to_json("init")}')
-        mqtt.publish(f'homeassistant/light/{name}/state', WB_LIGHTS[name].to_json(), qos=2, retain=True)
+        mqtt.publish(f'{WB_LIGHTS[name].topic}/state', WB_LIGHTS[name].to_json(), retain=True)
         log.info(f'Опубликовали состояние: {WB_LIGHTS[name].to_json()}')
 
 
