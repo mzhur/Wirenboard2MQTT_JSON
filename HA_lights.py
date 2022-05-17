@@ -1,5 +1,7 @@
 import asyncio, json
+from unittest import result
 from dimmers import WB_Dimmer
+import logging
 
 class WB_Light():
     def __init__(self, dimmer, chanels, name, topic) -> None:
@@ -14,6 +16,7 @@ class WB_Light():
         self.dimmer = dimmer
         self.topic = topic + name
         self.state = False
+        self.log = logging.getLogger()
         if self.dimmer.type == 'WB_MRGBW_D':
             self.brightness = 255
         else:
@@ -29,20 +32,25 @@ class WB_Light():
         except Exception as e:
                 raise ValueError(f'Возможно испльзован недопустимый канал {self.chanels} для данного диммера? {self.dimmer.type}. : {e.with_traceback}')
         self.name = name
-    def on(self, brightness=None):
-        self.state = True
-        if brightness is None:
-            brightness = self.brightness
-        asyncio.create_task(self.dimmer.push_data(brightness, self.chanels))
-            
-    def off(self):
-        self.state = False
-        asyncio.create_task(self.dimmer.push_data(0, self.chanels))
 
-    def set_brightness(self, brightness):
+    async def on(self):
+        self.log.info(f'Включаем светильник {self.name} адрес {self.dimmer.address} : {self.chanels} яркость {self.brightness}')
+        self.state = True
+        await self.dimmer.push_data(self.brightness, self.chanels)
+        return 0
+            
+    async def off(self):
+        self.log.info(f'Выключаем светильник {self.name} адрес {self.dimmer.address} : {self.chanels} яркость {self.brightness}')
+        self.state = False
+        await self.dimmer.push_data(0, self.chanels)
+        return 0
+
+    async def set_brightness(self, brightness):
+        self.log.info(f'Устанавливаем яркость {brightness} для светильник {self.name} адрес {self.dimmer.address} : {self.chanels}')
         self.brightness = brightness
         if self.state:
-            asyncio.create_task(self.dimmer.push_data(brightness, self.chanels))
+            await self.on()
+        return 0
     
     def to_json(self, type='state'):
         if type == 'init':
