@@ -4,7 +4,7 @@ from dimmers import WB_Dimmer
 import logging
 
 class WB_Light():
-    def __init__(self, dimmer, chanels, name, topic) -> None:
+    def __init__(self, dimmer, chanels, name, topic, frendly_name) -> None:
         if not isinstance(dimmer, WB_Dimmer):
             raise ValueError('The dimmer is not wirebboard dimmer object.')
         if isinstance(chanels, int):
@@ -19,8 +19,10 @@ class WB_Light():
         self.log = logging.getLogger()
         if self.dimmer.type == 'WB_MRGBW_D':
             self.brightness = 255
+            self.brightness_scale = 255
         else:
             self.brightness = 100
+            self.brightness_scale = 100
         try:
             for ch in self.chanels:
                 tmp = dimmer.chanels[ch]
@@ -32,6 +34,7 @@ class WB_Light():
         except Exception as e:
                 raise ValueError(f'Возможно испльзован недопустимый канал {self.chanels} для данного диммера? {self.dimmer.type}. : {e.with_traceback}')
         self.name = name
+        self.frendly_name = frendly_name
 
     async def on(self):
         self.log.info(f'Включаем светильник {self.name} адрес {self.dimmer.address} : {self.chanels} яркость {self.brightness}')
@@ -54,7 +57,7 @@ class WB_Light():
     
     def to_json(self, type='state'):
         if type == 'init':
-            return json.dumps({'~': self.topic, 'name': self.name, 'unique_id': f'{self.name}_{self.dimmer.address}_{str(self.chanels)}', 'cmd_t': '~/set', 'stat_t': '~/state', 'schema': 'json', 'brightness': True})
+            return json.dumps({'~': self.topic, 'object_id': self.name, 'name': self.frendly_name, 'unique_id': f'{self.name}_{self.dimmer.address}_{str(self.chanels)}', 'brightness_scale': self.brightness_scale, 'cmd_t': '~/set', 'stat_t': '~/state', 'schema': 'json', 'brightness': True})
         else:
             if self.state:
                 return json.dumps({'brightness': self.brightness, 'state': 'ON'})

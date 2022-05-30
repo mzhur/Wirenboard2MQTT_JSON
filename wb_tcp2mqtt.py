@@ -1,17 +1,17 @@
 import asyncio, logging, signal, json
-from pymodbus.client.asynchronous.serial import (AsyncModbusSerialClient as ModbusClient)
+from pymodbus.client.asynchronous.tcp import AsyncModbusTCPClient as ModbusClient
 from pymodbus.client.asynchronous import schedulers
-from asyncudp import open_local_endpoint
 from dimmers import WB_Dimmer
 from HA_lights import WB_Light
 from datetime import datetime
-import uvloop
 from gmqtt import Client as MQTTClient
+import uvloop
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.INFO)
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
 STOP = asyncio.Event()
 
 WB_DIMMERS = {}
@@ -51,10 +51,8 @@ def ask_exit(*args):
 
 
 async def init_loop(loop, client):
-    
-
     await mqtt.connect(CONFIG['mqtt_host'])
-
+    
     # Создаем сущности физических димеров согласно конфигурационному файлу
     for addr in CONFIG['devices']:
         WB_DIMMERS[int(addr)] = WB_Dimmer(CONFIG['devices'][addr], addr, client) # раскомментировать client для работы с modbus
@@ -98,8 +96,9 @@ async def init_loop(loop, client):
 
 if __name__ == '__main__':
     print('Начали')
-    loop, client = ModbusClient(schedulers.ASYNC_IO, port='/dev/ttyS0', baudrate=9600, method="rtu", bytesize=8, stopbits=2, parity = 'N', timeout=0.5)
+    loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGINT, ask_exit)
     loop.add_signal_handler(signal.SIGTERM, ask_exit)
+    loop, client = ModbusClient(schedulers.ASYNC_IO, host='192.168.55.197', port=23, loop=loop)
     loop.run_until_complete(init_loop(loop, client,))
 

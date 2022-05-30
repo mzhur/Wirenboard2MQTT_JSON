@@ -1,4 +1,32 @@
 import json
+
+CONFIG1 = {'mqtt_host': '192.168.55.1',
+          'serial_port': '/dev/ttyS0',
+          'devices': {
+               60  : 'WB-MDM3'
+                     },
+          'lights': {
+              'stolovaia' : {
+                  'address': 60,
+                  'chanels': [0],
+                  'name': 'Столовая'
+                },
+                'vanina_komnata' : {
+                  'address': 60,
+                  'chanels': [1],
+                  'name': 'Ванина комната'
+                },
+                'spalnia' : {
+                  'address': 60,
+                  'chanels': [2],
+                  'name': 'Спальня'
+                }
+                }
+
+                     } 
+
+
+
 CONFIG = {'mqtt_host': '192.168.55.1',
           'serial_port': '/dev/ttyS0',
           'devices': {
@@ -49,4 +77,4 @@ CONFIG = {'mqtt_host': '192.168.55.1',
           }
 
 with open("settings.conf", "w", encoding="utf-8") as file:
-    json.dump(CONFIG, file)
+    json.dump(CONFIG1, file)
