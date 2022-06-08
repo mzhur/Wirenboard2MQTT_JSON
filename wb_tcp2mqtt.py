@@ -6,18 +6,21 @@ from HA_lights import WB_Light
 from datetime import datetime
 from gmqtt import Client as MQTTClient
 import uvloop
+from socket import socket, AF_INET, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR
+
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logging.basicConfig()
 log = logging.getLogger()
-log.setLevel(logging.INFO)
+log.setLevel(logging.WARNING)
 
 STOP = asyncio.Event()
 
 WB_DIMMERS = {}
 WB_LIGHTS = {}
+SENSORS = {}
 
-mqtt = MQTTClient("wirenboardlight")
+mqtt = MQTTClient("wirenboardlightTCP")
 
 async def on_message(client, topic, payload, qos, properties):
     logging.debug('[RECV MSG {}] TOPIC: {} PAYLOAD: {} QOS: {} PROPERTIES: {}'
@@ -48,11 +51,27 @@ def ask_exit(*args):
     log.info(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Start exitin by user request\n")
     STOP.set()
 
+class UDPWorker:
+    def connection_made(self, transport):
+        self.transport = transport
+        log.info(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Создали udp server")
+
+    def datagram_received(self, data, addr):
+        log.info(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - UDP packet from {addr} sensor {data[0]} light {(data[4] << 24) | (data[3] << 16) | (data[2] << 8) | data[1]} increment {int.from_bytes([data[6],data[5]], byteorder='big', signed=True)}")
+        id_light = (data[4] << 24) | (data[3] << 16) | (data[2] << 8) | data[1]
+        for light in WB_LIGHTS:
+            if (WB_LIGHTS[light].unique_id()//10 == id_light):
+                WB_LIGHTS[light].brightness_increment = WB_LIGHTS[light].brightness_increment + int.from_bytes([data[6],data[5]], byteorder='big', signed=True)
+                log.info(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Для светильника {WB_LIGHTS[light].unique_id()//10} увеличить яркость на {WB_LIGHTS[light].brightness_increment}") 
+           
 
 
 async def init_loop(loop, client):
+    server_socket = socket(AF_INET, SOCK_DGRAM)
+    server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+    server_socket.bind(('', 7031))
+    transport, _ = await loop.create_datagram_endpoint(lambda: UDPWorker(), sock=server_socket)
     await mqtt.connect(CONFIG['mqtt_host'])
-    
     # Создаем сущности физических димеров согласно конфигурационному файлу
     for addr in CONFIG['devices']:
         WB_DIMMERS[int(addr)] = WB_Dimmer(CONFIG['devices'][addr], addr, client) # раскомментировать client для работы с modbus
@@ -71,6 +90,7 @@ async def init_loop(loop, client):
             try:
                 WB_LIGHTS[name] = WB_Light(WB_DIMMERS[CONFIG['lights'][name]['address']], CONFIG['lights'][name]['chanels'], name, 'englishmile/light/', CONFIG['lights'][name]['name'])
                 unsuccess = False
+                asyncio.create_task(WB_LIGHTS[name].sync_brightness())
             except Exception as e:
                 log.info(e)
                 await asyncio.sleep(1)
@@ -88,14 +108,12 @@ async def init_loop(loop, client):
         log.info(f'Опубликовали состояние: {WB_LIGHTS[name].to_json()}')
 
     await STOP.wait()
-    #while True:
-    #    log.info('tic')
-    #    asyncio.sleep(30)
+    transport.close()
     await mqtt.disconnect()
+    server_socket.close()
 
 
 if __name__ == '__main__':
-    print('Начали')
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGINT, ask_exit)
     loop.add_signal_handler(signal.SIGTERM, ask_exit)

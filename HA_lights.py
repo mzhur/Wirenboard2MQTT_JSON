@@ -1,5 +1,7 @@
 import asyncio, json
+from base64 import encode
 from unittest import result
+from binascii import crc32
 from dimmers import WB_Dimmer
 import logging
 
@@ -17,6 +19,7 @@ class WB_Light():
         self.topic = topic + name
         self.state = False
         self.log = logging.getLogger()
+        self.brightness_increment = 0
         if self.dimmer.type == 'WB_MRGBW_D':
             self.brightness = 255
             self.brightness_scale = 255
@@ -54,10 +57,34 @@ class WB_Light():
         if self.state:
             await self.on()
         return 0
+
+    async def sync_brightness(self):
+        while True:
+            if self.brightness_increment != 0:
+                if (self.brightness + self.brightness_increment) < 1:
+                   self.brightness = 1
+                   self.log.info(f"Для светильника {self.unique_id()//10} Записываем в модбас 1")
+                elif (self.brightness + self.brightness_increment) > self.brightness_scale:
+                    self.brightness = self.brightness_scale
+                    self.log.info(f"Для светильника {self.unique_id()//10} Записываем в модбас {self.brightness_scale}")
+                else:
+                    self.log.info(f"Для светильника {self.unique_id()//10} Записываем в модбас {self.brightness + self.brightness_increment}")
+                    self.brightness = self.brightness + self.brightness_increment
+                self.brightness_increment = 0
+                if self.state:
+                    await self.dimmer.push_data(self.brightness, self.chanels)
+                else:
+                    await asyncio.sleep(0)
+            else:
+                await asyncio.sleep(0)
+        self.log.info(f"Для светильника {self.unique_id()//10} Завершили синхронизацию")
+
+    def unique_id(self):
+        return crc32(bytes(f'{self.name}_{self.dimmer.address}_{str(self.chanels)}', encoding='utf-8'))
     
     def to_json(self, type='state'):
         if type == 'init':
-            return json.dumps({'~': self.topic, 'object_id': self.name, 'name': self.frendly_name, 'unique_id': f'{self.name}_{self.dimmer.address}_{str(self.chanels)}', 'brightness_scale': self.brightness_scale, 'cmd_t': '~/set', 'stat_t': '~/state', 'schema': 'json', 'brightness': True})
+            return json.dumps({'~': self.topic, 'object_id': self.name, 'name': self.frendly_name, 'unique_id': self.unique_id(), 'brightness_scale': self.brightness_scale, 'cmd_t': '~/set', 'stat_t': '~/state', 'schema': 'json', 'brightness': True})
         else:
             if self.state:
                 return json.dumps({'brightness': self.brightness, 'state': 'ON'})

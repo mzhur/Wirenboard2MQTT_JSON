@@ -46,9 +46,10 @@ class WB_Dimmer():
                 self.chanels[n] = r
             await asyncio.sleep(random.random()/2)
 
-    async def push_data(self, data, chanals):
+    async def push_data(self, data, chanals, locked = False):
             self.log.info(f'Новые данные для {self.address} канал {chanals} : {data}')
-            await self.get_lock()
+            if not locked:
+                await self.get_lock()
             tmp_ch = self.chanels
             self.log.debug(f'Старые значения каналов {tmp_ch}')
             for ch in chanals:
@@ -61,8 +62,9 @@ class WB_Dimmer():
                     self.log.debug(f'Успешно записали в {self.type} адрес {self.address} значения: {tmp_ch}')
                     self.chanels = tmp_ch
                     unsuccess = False
-                    self.lock = False
-                    self.log.debug(f'Снята блокировка')
+                    if not locked:
+                       self.lock = False
+                       self.log.debug(f'Снята блокировка')
                 except Exception as e:
                     self.log.info(f'Ошибка записи данных modbus для {self.type} адрес {self.address} : {e.with_traceback}')
                     await asyncio.sleep(random.random()/2)
