@@ -2,6 +2,8 @@ import json
 
 CONFIG1 = {'mqtt_host': '192.168.55.1',
           'serial_port': '/dev/ttyS0',
+          'udp_server':'192.168.55.1',
+          'udp_port': 7077, 
           'devices': {
                60  : 'WB-MDM3'
                      },
@@ -29,52 +31,47 @@ CONFIG1 = {'mqtt_host': '192.168.55.1',
 
 CONFIG = {'mqtt_host': '192.168.55.1',
           'serial_port': '/dev/ttyS0',
+          'udp_server':'192.168.55.1',
+          'udp_port': 7077,
           'devices': {
                100 : 'WB_MRGBW_D',
                103 : 'WB_MRGBW_D',
-               108 : 'WB_MRGBW_D',
-               60  : 'WB-MDM3'
+               108 : 'WB_MRGBW_D'
                      },
           'lights': {
-              'test_stolovaya' : {
-                  'address': 60,
-                  'chanels': [0]
-                },
-                'test_vanyna_komnata' : {
-                  'address': 60,
-                  'chanels': [1]
-                },
-                'test_spalnia' : {
-                  'address': 60,
-                  'chanels': [2]
-                },
-                'test_prohojia' : {
+                'prikhozhaia' : {
                   'address': 108,
-                  'chanels': [0]
+                  'chanels': [0],
+                  'name': 'Прихожая'
                 },
-                'test_kladovaia' : {
+                'kladovaia' : {
                   'address': 108,
-                  'chanels': [3]
+                  'chanels': [3],
+                  'name': 'Кладовая'
                 },
-                'test_zona_tv' : {
+                'zona_tv' : {
                   'address': 100,
-                  'chanels': [0,3]
+                  'chanels': [0,3],
+                  'name': 'Зона ТВ'
                 },
-                'test_wc' : {
+                'tualet_dush' : {
                   'address': 100,
-                  'chanels': [1,2]
+                  'chanels': [1,2],
+                  'name': 'Туалет/Душ'
                 },
-                'test_stoleshnitsa' : {
+                'stoleshnitsa' : {
                   'address': 103,
-                  'chanels': [3]
+                  'chanels': [3],
+                  'name': 'Столешница'
                 },
-                'test_kholl' : {
+                'kholl' : {
                   'address': 108,
-                  'chanels': [1]
+                  'chanels': [1],
+                  'name': 'Холл'
                 }
 
                      } 
           }
 
-with open("settings.conf", "w", encoding="utf-8") as file:
-    json.dump(CONFIG1, file)
+with open("rtu.conf", "w", encoding="utf-8") as file:
+    json.dump(CONFIG, file)

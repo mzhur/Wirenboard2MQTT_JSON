@@ -39,7 +39,7 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logging.basicConfig()
 log = logging.getLogger()
-log.setLevel(logging.WARNING)
+log.setLevel(logging.INFO)
 
 STOP = asyncio.Event()
 
@@ -47,7 +47,7 @@ WB_DIMMERS = {}
 WB_LIGHTS = {}
 SENSORS = {}
 
-mqtt = MQTTClient("wirenboardlightTCP")
+mqtt = MQTTClient("wirenboardlight-"+str(CONFIG['udp_port']))
 
 async def on_message(client, topic, payload, qos, properties):
     logging.debug('[RECV MSG {}] TOPIC: {} PAYLOAD: {} QOS: {} PROPERTIES: {}'
@@ -97,10 +97,11 @@ async def init_loop(loop, client):
     await mqtt.connect(CONFIG['mqtt_host'])
     # Создаем сущности физических димеров согласно конфигурационному файлу
     for addr in CONFIG['devices']:
-        WB_DIMMERS[int(addr)] = WB_Dimmer(CONFIG['devices'][addr], addr, client) # раскомментировать client для работы с modbus
-        asyncio.create_task(WB_DIMMERS[int(addr)].sync_registers())
+        WB_DIMMERS[int(addr)] = WB_Dimmer(CONFIG['devices'][addr], addr, client.protocol)
+        if await WB_DIMMERS[int(addr)].get_update(wd=10):
+            raise ValueError('Не смогли получить от диммера текущие состояния регистров')
         log.info(f"Создали объект диммера адрес: {addr}, тип: {CONFIG['devices'][addr]}")
-
+        
     # Создаем логические светильники с нужным количеством каналов диммера
     log.info(f"Диммеры: {WB_DIMMERS}")
     for name in CONFIG['lights']:
@@ -108,15 +109,10 @@ async def init_loop(loop, client):
         log.info(f"Адрес {CONFIG['lights'][name]['address']}")
         log.info(f"Каналы {CONFIG['lights'][name]['chanels']}")
         log.info(f"Диммер {WB_DIMMERS[CONFIG['lights'][name]['address']]}")
-        unsuccess = True
-        while unsuccess:
-            try:
-                WB_LIGHTS[name] = WB_Light(WB_DIMMERS[CONFIG['lights'][name]['address']], CONFIG['lights'][name]['chanels'], name, 'englishmile/light/', CONFIG['lights'][name]['name'])
-                unsuccess = False
-                asyncio.create_task(WB_LIGHTS[name].sync_brightness())
-            except Exception as e:
-                log.info(e)
-                await asyncio.sleep(1)
+        WB_LIGHTS[name] = WB_Light(WB_DIMMERS[CONFIG['lights'][name]['address']], CONFIG['lights'][name]['chanels'], name, 'englishmile/light/', CONFIG['lights'][name]['name'])
+        if WB_LIGHTS[name].state:
+            await WB_LIGHTS[name].on()
+        asyncio.create_task(WB_LIGHTS[name].sync_brightness())
         log.info(f"Создали объект светильника имя: {name}, адрес: {CONFIG['lights'][name]['address']}, каналы {CONFIG['lights'][name]['chanels']}")
     # Публикуем их для Home Assistant
 
@@ -145,11 +141,10 @@ if __name__ == '__main__':
     loop.add_signal_handler(signal.SIGTERM, ask_exit)
     if CONFIG.get('serial_port', False):
        log.warning(f'Запускаем соединение по протоколу Modbus RTU')
-       loop, client = ModbusClient(schedulers.ASYNC_IO, port=CONFIG['serial_port'], baudrate=9600, method="rtu", bytesize=8, stopbits=2, parity = 'N', timeout=0.5)
+       loop, client = ModbusClient(schedulers.ASYNC_IO, port=CONFIG['serial_port'], baudrate=9600, method="rtu", bytesize=8, stopbits=2, parity = 'N')
     elif CONFIG.get('modbus_tcp_server', False):
         log.warning(f'Запускаем соединение по протоколу Modbus TCP')
         loop, client = ModbusClient(schedulers.ASYNC_IO, host=CONFIG['modbus_tcp_server'], port=23, loop=loop)
     else:
         sys.exit("В конфигурационном файле не обнаружен протокол по которому будем общаться с устройствами")
     loop.run_until_complete(init_loop(loop, client,))
-

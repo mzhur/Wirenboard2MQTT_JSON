@@ -26,16 +26,11 @@ class WB_Light():
         else:
             self.brightness = 100
             self.brightness_scale = 100
-        try:
-            for ch in self.chanels:
-                tmp = dimmer.chanels[ch]
-                if (tmp is None):
-                    raise ValueError('Диммер не успел получить данные по modbus. Возможно не запущена задача синхнонизации? Попробуйте снова создать класс через несколько секунд.')   
-                elif int(tmp) > 0:
-                    self.state = True
-                    self.brightness = tmp
-        except Exception as e:
-                raise ValueError(f'Возможно испльзован недопустимый канал {self.chanels} для данного диммера? {self.dimmer.type}. : {e.with_traceback}')
+        for ch in self.chanels:
+            chanel_brightness = int(self.dimmer.chanels[ch])
+            if chanel_brightness > 0:
+                self.state = True
+                self.brightness = chanel_brightness
         self.name = name
         self.frendly_name = frendly_name
 
