@@ -37,21 +37,20 @@ class WB_Light():
     async def on(self):
         self.log.info(f'Включаем светильник {self.name} адрес {self.dimmer.address} : {self.chanels} яркость {self.brightness}')
         self.state = True
-        await self.dimmer.push_data(self.brightness, self.chanels)
-        return 0
+        return await self.dimmer.push_data(self.brightness, self.chanels, wd=50)
             
     async def off(self):
         self.log.info(f'Выключаем светильник {self.name} адрес {self.dimmer.address} : {self.chanels} яркость {self.brightness}')
         self.state = False
-        await self.dimmer.push_data(0, self.chanels)
-        return 0
+        return await self.dimmer.push_data(0, self.chanels, wd = 50)
 
     async def set_brightness(self, brightness):
         self.log.info(f'Устанавливаем яркость {brightness} для светильник {self.name} адрес {self.dimmer.address} : {self.chanels}')
         self.brightness = brightness
         if self.state:
-            await self.on()
-        return 0
+            return await self.on()
+        else:
+            return 0
 
     async def sync_brightness(self):
         while True:
@@ -71,7 +70,7 @@ class WB_Light():
                 else:
                     await asyncio.sleep(0)
             else:
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.1)
         self.log.info(f"Для светильника {self.unique_id()//10} Завершили синхронизацию")
 
     def unique_id(self):

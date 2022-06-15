@@ -28,20 +28,19 @@ class WB_Dimmer():
         await self.get_lock()
         count = 0
         while self.lock:
-            #try:
+            try:
                 response = await self.client.read_holding_registers(0, len(self.chanels) , unit=int(self.address))
-                print(response.registers)
                 for n, reg in enumerate(response.registers):
                     self.chanels[n] = int(reg)
                 self.lock = False
-            #except Exception as e:
-            #    self.log.info(f'Ошибка считывания данных modbus для {self.type} адрес {self.address} : {e.with_traceback}')
-            #    if wd > 0:
-            #       count = count + 1
-            #    if (wd - count) < 0:
-            #        self.lock = False
-            #        return 1
-            #    await asyncio.sleep(0)
+            except Exception as e:
+                self.log.info(f'Ошибка считывания данных modbus для {self.type} адрес {self.address} : {e.with_traceback}')
+                if wd > 0:
+                   count = count + 1
+                if (wd - count) < 0:
+                    self.lock = False
+                    return 1
+                await asyncio.sleep(0)
         return 0
 
     async def get_lock(self):
@@ -57,7 +56,10 @@ class WB_Dimmer():
             tmp_ch = self.chanels
             self.log.debug(f'Старые значения каналов {tmp_ch}')
             for ch in chanals:
-                tmp_ch[ch] = data
+                if (self.type == 'WB-MDM3') and (data > 100):
+                    tmp_ch[ch] = 100    
+                else:
+                    tmp_ch[ch] = data
             self.log.debug(f'Новые значения каналов {tmp_ch}')
             while self.lock:
                 try:

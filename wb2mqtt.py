@@ -9,6 +9,9 @@ import uvloop
 from socket import socket, AF_INET, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR
 #read settings from configuration file (json)
 
+LOG_LEVEL = logging.INFO
+exit_status = 0
+
 def createParser ():
     parser = argparse.ArgumentParser()
     parser.add_argument ('-c', '--config', default='settings.conf')
@@ -37,9 +40,15 @@ else:
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
-logging.basicConfig()
+f_name = f"wb{CONFIG['udp_port']}.log"
+try:
+    logging.basicConfig(filename=f_name,filemode='a',level = LOG_LEVEL)
+except:
+    with open(f_name,'w') as f:
+        f.write(f_name)
+        logging.basicConfig(filename=f_name,filemode='a',level = LOG_LEVEL)
+
 log = logging.getLogger()
-log.setLevel(logging.INFO)
 
 STOP = asyncio.Event()
 
@@ -50,21 +59,28 @@ SENSORS = {}
 mqtt = MQTTClient("wirenboardlight-"+str(CONFIG['udp_port']))
 
 async def on_message(client, topic, payload, qos, properties):
-    logging.debug('[RECV MSG {}] TOPIC: {} PAYLOAD: {} QOS: {} PROPERTIES: {}'
+    log.debug('[RECV MSG {}] TOPIC: {} PAYLOAD: {} QOS: {} PROPERTIES: {}'
                  .format(client._client_id, topic, payload, qos, properties))
+    result = 0
     for light in WB_LIGHTS:
         if topic == f'{WB_LIGHTS[light].topic}/set':
-            message = json.loads(str(payload, 'utf-8'))
-            if ('brightness' in message):
-                await WB_LIGHTS[light].set_brightness(message['brightness'])
-            if ('state' in message):
-                if message['state'] == 'ON':
-                    await WB_LIGHTS[light].on()
-                else:
-                    await WB_LIGHTS[light].off()
-            
-
-            mqtt.publish(f'{WB_LIGHTS[light].topic}/state', WB_LIGHTS[light].to_json())
+            try:
+                message = json.loads(str(payload, 'utf-8'))
+                if ('brightness' in message):
+                    result = await WB_LIGHTS[light].set_brightness(message['brightness'])
+                if ('state' in message):
+                    if message['state'] == 'ON':
+                        result = await WB_LIGHTS[light].on()
+                    else:
+                        result = await WB_LIGHTS[light].off()
+                if result > 0:
+                    exit_status = 1
+                    log.info(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Многократная ошибка записи в modbus, выходим для перезапуска\n")
+                    STOP.set()                
+                mqtt.publish(f'{WB_LIGHTS[light].topic}/state', WB_LIGHTS[light].to_json())
+            except:
+                log.warning('ERROR JSON DECODE WITH [RECV MSG {}] TOPIC: {} PAYLOAD: {} QOS: {} PROPERTIES: {}'
+                 .format(client._client_id, topic, payload, qos, properties))
     return 0                    
 
 mqtt.on_message = on_message
@@ -130,6 +146,8 @@ async def init_loop(loop, client):
     transport.close()
     await mqtt.disconnect()
     server_socket.close()
+    if exit_status > 0:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
