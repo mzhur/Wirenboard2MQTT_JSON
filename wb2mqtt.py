@@ -22,10 +22,8 @@ with open(parser.parse_args().config) as f:
         CONFIG = json.load(f)
 if CONFIG.get('serial_port', False):
     from pymodbus.client.asynchronous.serial import (AsyncModbusSerialClient as ModbusClient)
-    print('Импортируем serial')
 elif CONFIG.get('modbus_tcp_server', False):
     from pymodbus.client.asynchronous.tcp import AsyncModbusTCPClient as ModbusClient
-    print('Импортируем tcp')
 elif CONFIG.get('mqtt_host') is None:
     sys.exit("В конфигурационном файле не обнаружен адрес MQTT сервера")
 elif CONFIG.get('udp_server') is None:
@@ -77,7 +75,7 @@ async def on_message(client, topic, payload, qos, properties):
                     exit_status = 1
                     log.info(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Многократная ошибка записи в modbus, выходим для перезапуска\n")
                     STOP.set()                
-                mqtt.publish(f'{WB_LIGHTS[light].topic}/state', WB_LIGHTS[light].to_json())
+                mqtt.publish(f'{WB_LIGHTS[light].topic}/state', WB_LIGHTS[light].to_json(),qos=1)
             except:
                 log.warning('ERROR JSON DECODE WITH [RECV MSG {}] TOPIC: {} PAYLOAD: {} QOS: {} PROPERTIES: {}'
                  .format(client._client_id, topic, payload, qos, properties))
@@ -111,10 +109,11 @@ async def init_loop(loop, client):
     server_socket.bind(('', CONFIG['udp_port']))
     transport, _ = await loop.create_datagram_endpoint(lambda: UDPWorker(), sock=server_socket)
     await mqtt.connect(CONFIG['mqtt_host'])
+
     # Создаем сущности физических димеров согласно конфигурационному файлу
     for addr in CONFIG['devices']:
-        WB_DIMMERS[int(addr)] = WB_Dimmer(CONFIG['devices'][addr], addr, client.protocol)
-        if await WB_DIMMERS[int(addr)].get_update(wd=10):
+        WB_DIMMERS[int(addr)] = WB_Dimmer(CONFIG['devices'][addr], addr, client)
+        if await WB_DIMMERS[int(addr)].get_update(wd=5):
             raise ValueError('Не смогли получить от диммера текущие состояния регистров')
         log.info(f"Создали объект диммера адрес: {addr}, тип: {CONFIG['devices'][addr]}")
         
@@ -151,9 +150,6 @@ async def init_loop(loop, client):
 
 
 if __name__ == '__main__':
-    print(CONFIG)
-    print(CONFIG.get('serial_port', False))
-    print(CONFIG.get('modbus_tcp_server', False))
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGINT, ask_exit)
     loop.add_signal_handler(signal.SIGTERM, ask_exit)

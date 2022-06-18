@@ -1,8 +1,8 @@
 import asyncio
 from datetime import datetime
+from http import client
 import logging
 import random
-from turtle import right
 
 class WB_Dimmer():
     dimmer_types = ['WB_MRGBW_D', 'WB-MDM3']
@@ -10,6 +10,11 @@ class WB_Dimmer():
     def __init__(self, d_type, address, client) -> None:
         if d_type in self.dimmer_types:
             self.client = client
+            try:
+                self.connection_type = self.client.connected
+                self.connection_type = 'tcp'
+            except:
+                self.connection_type = 'rtu'
             self.address = int(address)
             self.log = logging.getLogger()
             if d_type == 'WB_MRGBW_D':
@@ -29,7 +34,7 @@ class WB_Dimmer():
         count = 0
         while self.lock:
             try:
-                response = await self.client.read_holding_registers(0, len(self.chanels) , unit=int(self.address))
+                response = await self.client.protocol.read_holding_registers(0, len(self.chanels) , unit=int(self.address))
                 for n, reg in enumerate(response.registers):
                     self.chanels[n] = int(reg)
                 self.lock = False
@@ -52,6 +57,15 @@ class WB_Dimmer():
     async def push_data(self, data, chanals, wd=0):
             count = 0
             self.log.info(f'Новые данные для {self.address} канал {chanals} : {data}')
+            if self.connection_type == 'tcp':
+                while not self.client.connected:
+                    self.log.info(f'Нет соединения  {self.client.connected}')
+                    if wd > 0:
+                        count = count + 1
+                    if (wd - count) < 0:
+                        self.lock = False
+                        return 1
+                    await asyncio.sleep(random.random()/5)
             await self.get_lock()
             tmp_ch = self.chanels
             self.log.debug(f'Старые значения каналов {tmp_ch}')
@@ -62,18 +76,19 @@ class WB_Dimmer():
                     tmp_ch[ch] = data
             self.log.debug(f'Новые значения каналов {tmp_ch}')
             while self.lock:
-                try:
-                    registers = await self.client.write_registers(0, tmp_ch , unit=int(self.address))
-                    self.log.debug(f'Успешно записали в {self.type} адрес {self.address} значения: {tmp_ch}')
-                    self.chanels = tmp_ch
-                    self.lock = False
-                    self.log.debug(f'Снята блокировка')
-                except Exception as e:
-                    self.log.info(f'Ошибка записи данных modbus для {self.type} адрес {self.address} : {e.with_traceback}')
-                    if wd > 0:
-                        count = count + 1
-                    if (wd - count) < 0:
+                    try:
+                        registers = await self.client.protocol.write_registers(0, tmp_ch , unit=int(self.address))
+                        self.log.debug(f'Успешно записали в {self.type} адрес {self.address} значения: {tmp_ch}')
+                        self.chanels = tmp_ch
                         self.lock = False
-                        return 1
-                    await asyncio.sleep(random.random()/2)
+                        self.log.debug(f'Снята блокировка')
+                    except Exception as e:
+                        self.log.info(f'Ошибка записи данных modbus для {self.type} адрес {self.address} : {e.with_traceback}')
+                        if wd > 0:
+                            count = count + 1
+                        if (wd - count) < 0:
+                            self.lock = False
+                            return 1
+                        await asyncio.sleep(random.random()/2)
+                
             return 0
